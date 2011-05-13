@@ -28,145 +28,175 @@ Other useful links:
 
 # TODO
 #
-# - Reorganize the code in order to improve the parsing of the inputs
+# - Add 'nodata' value information
+# - Correct the scaling factor 
+# - The MSG areas are overlapping by one pixel
 # - There seems to be a small offset between the georeferencing with
 # the method used in this script and the one suggested by A. Rocha's
 # contact
-# - The MSG areas are overlapping by one pixel
-# - Create a VRT output
-# - Add 'nodata' value information
 # - When georeferencing GOES and MTSAT products, there are probably some
 # changes to be made to the 'geosProjString' variable. The lon_0 and h parameters
 # will probably be different
 
-import sys
 import re
-import os.path
-import numpy as np
+import os
+import numpy as np # can this dependency be removed?
 import subprocess
-from optparse import OptionParser
 from math import pow, sin, cos, atan, sqrt, radians, degrees
 import tables
 
+class HDF5Georeferencer(object):
 
-def main(argList):
-    parser = create_parser()
-    options, arguments = parser.parse_args(argList)
-    inputFile = arguments[0]
-    outputFile = arguments[1]
-    fileNameList = inputFile.split("_")
-    hdf5Params = get_hdf5_data(inputFile, options.datasetName)
-    print("subLon: %s" % hdf5Params["subLon"])
-    geosProjString = "+proj=geos +lon_0=%s +h=35785831 +x_0=0.0 +y_0=0.0" % hdf5Params["subLon"]
-    samplePoints = get_sample_coords(hdf5Params, geosProjString)
-    translateCommand = 'gdal_translate -a_srs "%s" ' % geosProjString
-    for (line, col, northing, easting) in samplePoints:
-        translateCommand += '-gcp %s %s %s %s ' % (col, line, easting, northing)
-    translateCommand += '"HDF5:"%s"://%s" %s' % (inputFile, hdf5Params["dataset"], outputFile)
-    print("translateCommand: %s" % translateCommand)
-    returnCode = subprocess.call(translateCommand, shell=True)
+    def __init__(self, h5FilePath):
+        """
+        Open an HDF5 file and extract its relevant parameters.
+        """
 
-def get_hdf5_data(filePath, dataset=None):
-    """
-    Extract all the relevant parameters from the HDF5 file's metadata.
-    """
+        self.h5FilePath = h5FilePath
+        # the LSA-SAF parameters have this shift because they use Fortran
+        # (an array's first index starts at 1 and not 0)
+        self.CLCorrection = -1 
+        # self.p1: Distance between satellite and center of the Earth, measured in km
+        self.p1 = 42164 
+        self.p2 = 1.006803
+        self.p3 = 1737121856
+        h5File = tables.openFile(h5FilePath)
+        self.arrayNames = [arr.name for arr in h5File.walkNodes("/", "Array")]
+        self.mainArray = h5File.root._f_getChild(\
+                         h5File.root._v_attrs["PRODUCT"]).name
+        subLonRE = re.search(r"[A-Za-z]{4}[<(][-+]*[0-9]{3}\.?[0-9]*[>)]",
+                             h5File.root._v_attrs["PROJECTION_NAME"])
 
-    inDs = tables.openFile(filePath)
-    if dataset is None:
-        dataset = inDs.root._v_attrs["PRODUCT"]
-    datasetArray = inDs.root._f_getChild(dataset)
-    subLonRE = re.search(r"[A-Za-z]{4}[<(][-+]*[0-9]{3}\.?[0-9]*[>)]",
-                         inDs.root._v_attrs["PROJECTION_NAME"])
-    if subLonRE:
-        subLon = float(subLonRE.group()[5:-1])
-    else:
-        raise ValueError
+        if subLonRE:
+            self.subLon = float(subLonRE.group()[5:-1])
+        else:
+            raise ValueError
+        self.coff = h5File.root._v_attrs["COFF"] + self.CLCorrection
+        self.loff = h5File.root._v_attrs["LOFF"] + self.CLCorrection
+        self.cfac = h5File.root._v_attrs["CFAC"] # should this be corrected too?
+        self.lfac = h5File.root._v_attrs["LFAC"] # should this be corrected too?
+        datasetArray = h5File.root._f_getChild(h5File.root._v_attrs["PRODUCT"])
+        self.nCols = datasetArray._v_attrs["N_COLS"]
+        self.nLines = datasetArray._v_attrs["N_LINES"]
+        self.satHeight = 35785831
+        self.GEOSProjString = "+proj=geos +lon_0=%s +h=%s +x_0=0.0 +y_0=0.0" \
+                              % (self.subLon, self.satHeight)
+        h5File.close()
 
-    hdf5Params = {"subLon" : subLon,
-                  "dataset" : dataset,
-                  "CFAC" : inDs.root._v_attrs["CFAC"],
-                  "LFAC" : inDs.root._v_attrs["LFAC"],
-                  "COFF" : inDs.root._v_attrs["COFF"],
-                  "LOFF" : inDs.root._v_attrs["LOFF"],
-                  "datasetArray" : inDs.root._f_getChild(dataset),
-                  "missingValue" : datasetArray._v_attrs["MISSING_VALUE"],
-                  "scalingFactor" : datasetArray._v_attrs["SCALING_FACTOR"],
-                  "nCols" : datasetArray._v_attrs["N_COLS"],
-                  "nLines" : datasetArray._v_attrs["N_LINES"]}
-    inDs.close()
-    return hdf5Params
+    def get_sample_coords(self, numSamples=10):
+        """
+        Return a list of tuples holding line, col, northing,easting.
+        """
 
-def get_sample_coords(hdf5Params, geosProjString, numSamples=10):
-    """
-    Return a list of tuples holding line, col, lat,lon.
-    """
+        samplePoints = []
+        while len(samplePoints) < numSamples:
+            line = np.random.randint(1, self.nLines + 1)
+            col = np.random.randint(1, self.nCols + 1)
+            lon, lat = self._get_lat_lon(line, col)
+            if lon:
+                easting, northing = self._get_east_north(lon, lat)
+                samplePoints.append((line, col, northing, easting))
+        return samplePoints
 
-    samplePoints = []
-    while len(samplePoints) < numSamples:
-        line = np.random.randint(1, hdf5Params["nLines"] + 1)
-        col = np.random.randint(1, hdf5Params["nCols"] + 1)
-        lon, lat = get_lat_lon(line, col, hdf5Params)
-        if lon:
-            easting, northing = get_east_north(lon, lat, geosProjString)
-            samplePoints.append((line, col, northing, easting))
-    return samplePoints
+    def _get_east_north(self, lon, lat):
+        """
+        Convert between latlon and geos coordinates.
+        """
 
-def get_east_north(lon, lat, geosProjString):
-    """
-    Convert between latlon and geos coordinates.
-    """
+        cs2csCommand = "cs2cs +init=epsg:4326 +to %s <<EOF\n%s %s\nEOF" \
+                        % (self.GEOSProjString, lon, lat)
+        newProcess = subprocess.Popen(cs2csCommand, shell=True, 
+                                      stdin=subprocess.PIPE, 
+                                      stdout=subprocess.PIPE, 
+                                      stderr=subprocess.PIPE)
+        stdout, stderr = newProcess.communicate()
+        easting, northing, other = stdout.strip().split()
+        return easting, northing
 
-    print("geosProjString: %s" % geosProjString)
-    cs2csCommand = "cs2cs +init=epsg:4326 +to %s <<EOF\n%s %s\nEOF" % (geosProjString, lon, lat)
-    newProcess = subprocess.Popen(cs2csCommand, shell=True, 
-                                  stdin=subprocess.PIPE, 
-                                  stdout=subprocess.PIPE, 
-                                  stderr=subprocess.PIPE)
-    stdout, stderr = newProcess.communicate()
-    easting, northing, other = stdout.strip().split()
-    return easting, northing
+    def _get_lat_lon(self, nLin, nCol):
+        """
+        Get the lat lon coordinates of a pixel.
+        """
+        
+        try:
+            # x and y are measured in Degrees
+            x = radians((nCol - self.coff) / (pow(2, -16) * self.cfac)) 
+            y = radians((nLin - self.loff) / (pow(2, -16) * self.lfac))
+            sd = sqrt(pow(self.p1 * cos(x) * cos(y), 2) - \
+                      self.p3 * (pow(cos(y), 2) + self.p2 * pow(sin(y), 2)))
+            sn = ((self.p1 * cos(x) * cos(y)) - sd) / (pow(cos(y), 2) + \
+                 self.p2 * pow(sin(y), 2))
+            s1 = self.p1 - sn * cos(x) * cos(y)
+            s2 = sn * sin(x) * cos(y)
+            s3 = -sn * sin(y)
+            sxy = sqrt(pow(s1, 2) + pow(s2, 2))
+            lon = degrees(atan(s2 / s1) + self.subLon)
+            lat = degrees(atan(self.p2 * s3 / sxy))
+        except ValueError:
+            lon = lat = None
+        return lon, lat
 
-def create_parser():
-    usage = """
-    Georeference a HDF5
+    def georef_gtif(self, samplePoints, outFileDir=None, selectedArrays=None):
+        """
+        ...
+        """
 
-            %prog [options] input_hdf5_file output_vrt_file 
+        if outFileDir is None:
+            outFileDir = os.getcwd()
+        translateCommand = 'gdal_translate -a_srs "%s" ' % self.GEOSProjString
+        if selectedArrays is None:
+            selectedArrays = [self.mainArray]
+        successfullGeorefs = []
+        for arrayName in selectedArrays:
+            inFileName = os.path.basename(self.h5FilePath)
+            extensionList = inFileName.rsplit(".")
+            if len(extensionList) > 1:
+                inFileName = ".".join(extensionList[:-1])
+            outFileName = os.path.join(outFileDir, "%s_%s.tif" \
+                                       % (inFileName, arrayName))
+            for (line, col, northing, easting) in samplePoints:
+                translateCommand += '-gcp %s %s %s %s ' % (col, line, easting, northing)
+            translateCommand += '"HDF5:"%s"://%s" %s' % (self.h5FilePath,
+                                arrayName, outFileName)
+            returnCode = subprocess.call(translateCommand, shell=True)
+            if returnCode == 0:
+                successfullGeorefs.append(outFileName)
+        return successfullGeorefs
 
-    VRT is the GDAL Virtual Format. It allows a virtual GDAL dataset to be composed from other datasets.
-    For more information, visit: http://www.gdal.org/gdal_vrttut.html
-    """
-    parser = OptionParser(usage=usage, version="%prog 0.9")
-    parser.add_option("-d", "--dataset", dest="datasetName",
-                      help="Name of a specific dataset to process. If not specified, the main dataset will be processed. The main dataset's name will be extracted from the filename of the input hdf5 file.")
-    return parser
+    def warp(self, fileList, outDir, projectionString="+proj=latlong"):
+        """
+        Warp the georeferenced files to the desired projection.
 
-def get_lat_lon(nLin, nCol, hdf5Params):
-    # CONSTANTS
-    subLon = hdf5Params["subLon"]
-    # p1: Distance between satellite and center of the Earth, measured in km
-    p1 = 42164 
-    p2 = 1.006803
-    p3 = 1737121856
-    CFAC = hdf5Params["CFAC"]
-    LFAC = hdf5Params["LFAC"]
-    CLCorrection = -1
-    COFF = hdf5Params["COFF"] + CLCorrection
-    LOFF = hdf5Params["LOFF"] + CLCorrection
-    try:
-        x = radians((nCol - COFF) / (pow(2, -16) * CFAC)) # x is measured in Degrees
-        y = radians((nLin - LOFF) / (pow(2, -16) * LFAC)) # y is measured in Degrees
-        sd = sqrt(pow(p1 * cos(x) * cos(y), 2) - \
-                  p3 * (pow(cos(y), 2) + p2 * pow(sin(y), 2)))
-        sn = ((p1 * cos(x) * cos(y)) - sd) / (pow(cos(y), 2) + p2 * pow(sin(y), 2))
-        s1 = p1 - sn * cos(x) * cos(y)
-        s2 = sn * sin(x) * cos(y)
-        s3 = -sn * sin(y)
-        sxy = sqrt(pow(s1, 2) + pow(s2, 2))
-        lon = degrees(atan(s2 / s1) + subLon)
-        lat = degrees(atan(p2 * s3 / sxy))
-    except ValueError:
-        lon = lat = None
-    return lon, lat
+        This method uses the external 'gdalwarp' utility program to warp
+        already georeferenced files that are in the GEOS projection to another
+        desired projection.
+
+        Inputs:
+            fileList - a list of paths pointing to already
+                       georeferenced files that are still in the GEOS
+                       projection.
+            projectionString - a string, taking any of the accepted PROJ4
+                               formats for describing a projection. Defaults
+                               to '+proj=latlong'.
+            outdir - The path to the desired output directory. Defaults
+                     to the same directory of the files in 'fileList'.
+
+        Returns: A list of paths to the successfully warped files.
+        """
+
+        warpCommand = 'gdalwarp  -s_srs "%s" -t_srs "%s" %s %s'
+        warpedFiles = []
+        for filePath in fileList:
+            dirName, basename = os.path.split(filePath)
+            extList = basename.rsplit(".")
+            outName = "%s_warped.%s" % (".".join(extList[:-1]), extList[-1])
+            outFileName = os.path.join(outDir, outName)
+            returnCode = subprocess.call(warpCommand % (self.GEOSProjString,
+                                         projectionString, filePath,
+                                         outFileName), shell=True)
+            if returnCode == 0:
+                warpedFiles.append(outFileName)
+        return warpedFiles
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    pass
