@@ -28,8 +28,7 @@ Other useful links:
 
 # TODO
 #
-# - Add 'nodata' value information
-# - Correct the scaling factor 
+# - Check out the -sds flag of the gdal_translate program. It may be useful.
 # - The MSG areas are overlapping by one pixel
 # - There seems to be a small offset between the georeferencing with
 # the method used in this script and the one suggested by A. Rocha's
@@ -40,7 +39,7 @@ Other useful links:
 
 import re
 import os
-import numpy as np # can this dependency be removed?
+import random
 import subprocess
 from math import pow, sin, cos, atan, sqrt, radians, degrees
 import tables
@@ -61,9 +60,23 @@ class HDF5Georeferencer(object):
         self.p2 = 1.006803
         self.p3 = 1737121856
         h5File = tables.openFile(h5FilePath)
-        self.arrayNames = [arr.name for arr in h5File.walkNodes("/", "Array")]
-        self.mainArray = h5File.root._f_getChild(\
-                         h5File.root._v_attrs["PRODUCT"]).name
+        self.arrays = dict()
+        mainArrayName = h5File.root._f_getChild(h5File.root._v_attrs[\
+                        "PRODUCT"]).name
+        for arr in h5File.walkNodes("/", "Array"):
+            npArray = arr.read()
+            scalingFactor = arr._v_attrs["SCALING_FACTOR"]
+            self.arrays[arr.name] = {
+                        "nCols" : arr._v_attrs["N_COLS"],
+                        "nLines" : arr._v_attrs["N_LINES"],
+                        "scalingFactor" : scalingFactor,
+                        "missingValue" : arr._v_attrs["MISSING_VALUE"] / scalingFactor,
+                        "min" : npArray.min() / scalingFactor,
+                        "max" : npArray.max() / scalingFactor,
+                        "oldMin" : npArray.min(),
+                        "oldMax" : npArray.max()}
+            if arr.name == mainArrayName:
+                self.arrays[arr.name]["mainArray"] = True
         subLonRE = re.search(r"[A-Za-z]{4}[<(][-+]*[0-9]{3}\.?[0-9]*[>)]",
                              h5File.root._v_attrs["PROJECTION_NAME"])
 
@@ -75,9 +88,6 @@ class HDF5Georeferencer(object):
         self.loff = h5File.root._v_attrs["LOFF"] + self.CLCorrection
         self.cfac = h5File.root._v_attrs["CFAC"] # should this be corrected too?
         self.lfac = h5File.root._v_attrs["LFAC"] # should this be corrected too?
-        datasetArray = h5File.root._f_getChild(h5File.root._v_attrs["PRODUCT"])
-        self.nCols = datasetArray._v_attrs["N_COLS"]
-        self.nLines = datasetArray._v_attrs["N_LINES"]
         self.satHeight = 35785831
         self.GEOSProjString = "+proj=geos +lon_0=%s +h=%s +x_0=0.0 +y_0=0.0" \
                               % (self.subLon, self.satHeight)
@@ -89,9 +99,12 @@ class HDF5Georeferencer(object):
         """
 
         samplePoints = []
+        #using the main array to extract nCols and nLines
+        nCols, nLines = [(v["nCols"], v["nLines"]) for k, v in\
+                        self.arrays.iteritems() if v.get("mainArray")][0]
         while len(samplePoints) < numSamples:
-            line = np.random.randint(1, self.nLines + 1)
-            col = np.random.randint(1, self.nCols + 1)
+            line = random.randint(1, nLines)
+            col = random.randint(1, nCols)
             lon, lat = self._get_lat_lon(line, col)
             if lon:
                 easting, northing = self._get_east_north(lon, lat)
@@ -101,6 +114,9 @@ class HDF5Georeferencer(object):
     def _get_east_north(self, lon, lat):
         """
         Convert between latlon and geos coordinates.
+
+        This method uses the external 'cs2cs' utility to perform coordinate
+        transformation.
         """
 
         cs2csCommand = "cs2cs +init=epsg:4326 +to %s <<EOF\n%s %s\nEOF" \
@@ -138,16 +154,39 @@ class HDF5Georeferencer(object):
 
     def georef_gtif(self, samplePoints, outFileDir=None, selectedArrays=None):
         """
-        ...
+        Create a georeferenced GeoTiff file for each of the selected arrays.
+
+        Inputs:
+            samplePoints - a list of tuples containing line, column, northing,
+                           easting, for each of the desired GCPs to set. This
+                           corresponds to the output of the 'get_sample_coords'
+                           method.
+            outFileDir - a string specifying the directory where the files
+                         are to be stored.
+            selectedArrays - a list of strings specifying the name of the 
+                             arrays present in the original HDF5 file that
+                             are to be georeferenced.
+
+        This method is calling the 'gdal_translate' utility to perform GCP
+        georeferencing based on the 'samplePoints' argument. The input CRS
+        is assumed to be the GEOS projection.
         """
 
         if outFileDir is None:
             outFileDir = os.getcwd()
-        translateCommand = 'gdal_translate -a_srs "%s" ' % self.GEOSProjString
         if selectedArrays is None:
-            selectedArrays = [self.mainArray]
+            selectedArrays = [k for k, v in self.arrays.iteritems() if
+                              v.get("mainArray")]
         successfullGeorefs = []
         for arrayName in selectedArrays:
+            missingValue = self.arrays[arrayName].get("missingValue")
+            translateCommand = 'gdal_translate -q -scale %s %s %s %s"\
+                               " -a_nodata "%s" -a_srs "%s" ' % \
+                                (self.arrays[arrayName].get("oldMin"),
+                                 self.arrays[arrayName].get("oldMax"),
+                                 self.arrays[arrayName].get("min"),
+                                 self.arrays[arrayName].get("max"),
+                                 missingValue, self.GEOSProjString)
             inFileName = os.path.basename(self.h5FilePath)
             extensionList = inFileName.rsplit(".")
             if len(extensionList) > 1:
@@ -184,19 +223,32 @@ class HDF5Georeferencer(object):
         Returns: A list of paths to the successfully warped files.
         """
 
-        warpCommand = 'gdalwarp  -s_srs "%s" -t_srs "%s" %s %s'
+        warpCommand = 'gdalwarp -dstnodata "%s" -s_srs "%s" -t_srs "%s" %s %s'
         warpedFiles = []
         for filePath in fileList:
+            arrayName = self._array_name_from_file(filePath)
+            missingValue = self.arrays[arrayName].get("missingValue")
             dirName, basename = os.path.split(filePath)
             extList = basename.rsplit(".")
             outName = "%s_warped.%s" % (".".join(extList[:-1]), extList[-1])
             outFileName = os.path.join(outDir, outName)
-            returnCode = subprocess.call(warpCommand % (self.GEOSProjString,
+            print(warpCommand % (missingValue, self.GEOSProjString,
+                projectionString, filePath, outFileName))
+            returnCode = subprocess.call(warpCommand % (missingValue, 
+                                         self.GEOSProjString,
                                          projectionString, filePath,
                                          outFileName), shell=True)
             if returnCode == 0:
                 warpedFiles.append(outFileName)
         return warpedFiles
+
+    def _array_name_from_file(self, filePath):
+        """
+        Extract the name of the array from the input filePath.
+        """
+
+        return [n for n in self.arrays.keys() if n in filePath][0]
+
 
 if __name__ == "__main__":
     pass
