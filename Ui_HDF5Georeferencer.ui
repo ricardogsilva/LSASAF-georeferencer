@@ -97,10 +97,7 @@
      <item>
       <widget class="QLabel" name="label_4">
        <property name="text">
-        <string>Output projection string (use any proj4 format)</string>
-       </property>
-       <property name="buddy">
-        <cstring>projectionTE</cstring>
+        <string>Output projection string</string>
        </property>
       </widget>
      </item>
@@ -120,7 +117,55 @@
     </layout>
    </item>
    <item>
-    <widget class="QTextEdit" name="projectionTE"/>
+    <layout class="QHBoxLayout" name="horizontalLayout_8">
+     <item>
+      <widget class="QRadioButton" name="wgs84RB">
+       <property name="text">
+        <string>WGS84 (lat long)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_6">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="horizontalLayout_9">
+     <item>
+      <widget class="QRadioButton" name="radioButton_2">
+       <property name="text">
+        <string>Specify custom projection (use any Proj4 format)</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer_7">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTextEdit" name="customProjectionTE"/>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_3">
@@ -215,7 +260,9 @@
   <tabstop>inputFilesPB</tabstop>
   <tabstop>loadFilePB</tabstop>
   <tabstop>datasetsLV</tabstop>
-  <tabstop>projectionTE</tabstop>
+  <tabstop>wgs84RB</tabstop>
+  <tabstop>radioButton_2</tabstop>
+  <tabstop>customProjectionTE</tabstop>
   <tabstop>outputDirLE</tabstop>
   <tabstop>outputDirPB</tabstop>
   <tabstop>deleteIntermediaryCB</tabstop>
