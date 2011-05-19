@@ -143,7 +143,7 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout_9">
      <item>
-      <widget class="QRadioButton" name="radioButton_2">
+      <widget class="QRadioButton" name="customProjRB">
        <property name="text">
         <string>Specify custom projection (use any Proj4 format)</string>
        </property>
@@ -261,7 +261,7 @@
   <tabstop>loadFilePB</tabstop>
   <tabstop>datasetsLV</tabstop>
   <tabstop>wgs84RB</tabstop>
-  <tabstop>radioButton_2</tabstop>
+  <tabstop>customProjRB</tabstop>
   <tabstop>customProjectionTE</tabstop>
   <tabstop>outputDirLE</tabstop>
   <tabstop>outputDirPB</tabstop>

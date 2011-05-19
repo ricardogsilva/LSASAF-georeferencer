@@ -10,7 +10,7 @@ from optparse import OptionParser
 import logging
 import os
 
-from georeference_hdf5 import HDF5Georeferencer
+from h5georef import H5Georef
 
 def create_parser():
     usage = """
@@ -61,7 +61,7 @@ def main(fileList, georefsDir, warpedDir, projectionString):
     georefFiles = []
     for hdf5FilePath in fileList:
         logging.debug("Processing file %s..." % hdf5FilePath)
-        h5g = HDF5Georeferencer(hdf5FilePath)
+        h5g = H5Georef(hdf5FilePath)
         samples = h5g.get_sample_coords()
         logging.debug("Sample points: %s" % [s for s in samples])
         logging.debug("Georeferencing...")
