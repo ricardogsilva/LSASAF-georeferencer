@@ -44,7 +44,7 @@ import subprocess
 from math import pow, sin, cos, atan, sqrt, radians, degrees
 import tables
 
-class HDF5Georeferencer(object):
+class H5Georef(object):
 
     def __init__(self, h5FilePath):
         """
