@@ -6,8 +6,10 @@
 """
 
 # TODO
+
 #   - Implement logging
 #   - Work on the get_files() method, adding some validation
+#   - Use a secondary thread for georeferencing of the files
 
 from PyQt4.QtCore import *
 from PyQt4.QtGui import *
