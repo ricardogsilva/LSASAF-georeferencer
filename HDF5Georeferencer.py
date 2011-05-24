@@ -45,10 +45,10 @@ class HDF5Georeferencer(QDialog, Ui_Form):
         filePaths = QFileDialog.getOpenFileNames(self, "Select HDF5 files")
         if len(filePaths) > 0:
             self.logger.debug("Some files have been selected.")
+            self.inputFilesLE.setText(";".join([str(p) for p in filePaths]))
         else:
             self.logger.debug("No files have been selected.")
-        for filePath in filePaths:
-            self.logger.debug("filePath: %s" % filePath)
+
 
 
 def create_logger(logLevel="info"):
