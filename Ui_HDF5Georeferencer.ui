@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>491</width>
-    <height>514</height>
+    <height>569</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -214,6 +214,13 @@
       </spacer>
      </item>
     </layout>
+   </item>
+   <item>
+    <widget class="QProgressBar" name="progressBar">
+     <property name="value">
+      <number>24</number>
+     </property>
+    </widget>
    </item>
    <item>
     <widget class="Line" name="line">
