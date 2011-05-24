@@ -9,6 +9,10 @@
 #
 #   - Work on the get_files() method, adding some validation
 #   - Use a secondary thread for georeferencing of the files
+#   - Allow multiple dataset selection in datasetsLW
+#   - Toggle custom projection text edit's enabled state based on the radio
+#       button currently selected
+#   - Use QMessageBox's property-based API instead of the static functions
 
 import logging
 from optparse import OptionParser
@@ -74,8 +78,12 @@ class HDF5Georeferencer(QDialog, Ui_Form):
             if len(datasets) > 0:
                 self.toggle_widgets([self.datasetsLW, self.wgs84RB,
                                     self.customProjRB], True)
+            else:
+                raise IOError("Invalid HDF5 file.\nCouldn't determine "
+                              "available datasets.")
         except IOError, msg:
             self.logger.error(msg)
+            QMessageBox.critical(self, "Error", msg.args[0])
         self.logger.debug("get_datasets method exiting.")
 
 def create_logger(logLevel="info"):

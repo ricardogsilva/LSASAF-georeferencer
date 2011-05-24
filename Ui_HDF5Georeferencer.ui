@@ -67,7 +67,7 @@
      <item>
       <widget class="QLabel" name="label_2">
        <property name="text">
-        <string>Select datasets to use</string>
+        <string>Select dataset(s) to use</string>
        </property>
       </widget>
      </item>
