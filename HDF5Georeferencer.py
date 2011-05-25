@@ -43,23 +43,15 @@ class HDF5Georeferencer(QDialog, Ui_Form):
         self.connect(self.wgs84RB, SIGNAL("toggled(bool)"),
                      self.toggle_radio_buttons)
         self.wgs84RB.setChecked(True)
-        self.disable_other_widgets()
+        self.enable_other_widgets(toggleState=False)
 
-    def enable_widgets(self, widgetList):
-        """Disable widgets."""
+    def toggle_widgets(self, widgetList, toggleState=True):
+        """Toggle widgets' enabled state."""
 
-        self.logger.debug("enable_widgets method called.")
+        self.logger.debug("toggle_widgets method called.")
         for wid in widgetList:
-            wid.setEnabled(True)
-        self.logger.debug("enable_widgets method exiting.")
-
-    def disable_widgets(self, widgetList):
-        """Disable widgets."""
-
-        self.logger.debug("disable_widgets method called.")
-        for wid in widgetList:
-            wid.setEnabled(False)
-        self.logger.debug("disable_widgets method exiting.")
+            wid.setEnabled(toggleState)
+        self.logger.debug("toggle_widgets method exiting.")
 
     def get_files(self):
         self.logger.debug("get_files method called.")
@@ -94,13 +86,13 @@ class HDF5Georeferencer(QDialog, Ui_Form):
                 self.datasetsLW.addItem(datasetName)
             #self.datasetsLW.
             if len(datasets) > 0:
-                self.enable_other_widgets()
+                self.enable_other_widgets(toggleState=True)
             else:
-                self.disable_other_widgets()
+                self.enable_other_widgets(toggleState=False)
                 raise IOError("Invalid HDF5 file.\nCouldn't determine "
                               "available datasets.")
         except IOError, msg:
-            self.disable_other_widgets()
+            self.enable_other_widgets(toggleState=False)
             self.logger.error(msg)
             QMessageBox.critical(self, "Error", msg.args[0])
         self.logger.debug("get_datasets method exiting.")
@@ -113,24 +105,14 @@ class HDF5Georeferencer(QDialog, Ui_Form):
             self.customProjectionTE.setEnabled(True)
         self.logger.debug("toggle_radio_buttons method exiting.")
 
-    def disable_other_widgets(self):
-        self.logger.debug("disable_other_widgets method called.")
-        widgetsToDisable = (self.label_2, self.datasetsLW, self.label_4,
-                            self.wgs84RB, self.customProjRB,
-                            self.customProjectionTE, self.label_3,
-                            self.outputDirLE, self.outputDirPB,
-                            self.deleteIntermediaryCB, self.processFilesPB)
-        self.disable_widgets(widgetsToDisable)
-        self.logger.debug("disable_other_widgets method exiting.")
-
-    def enable_other_widgets(self):
+    def enable_other_widgets(self, toggleState=True):
         self.logger.debug("enable_other_widgets method called.")
-        widgetsToDisable = (self.label_2, self.datasetsLW, self.label_4,
+        widgetsToActUpon = (self.label_2, self.datasetsLW, self.label_4,
                             self.wgs84RB, self.customProjRB,
                             self.customProjectionTE, self.label_3,
                             self.outputDirLE, self.outputDirPB,
                             self.deleteIntermediaryCB, self.processFilesPB)
-        self.enable_widgets(widgetsToDisable)
+        self.toggle_widgets(widgetsToActUpon, toggleState=toggleState)
         self.logger.debug("enable_other_widgets method exiting.")
 
     def select_output_dir(self):
