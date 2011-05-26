@@ -7,7 +7,6 @@
 
 # TODO
 #
-#   - Use a secondary thread for georeferencing of the files
 #   - Use QMessageBox's property-based API instead of the static functions
 #   - Use validators for both browse... operations
 
@@ -27,13 +26,22 @@ class HDF5Georeferencer(QDialog, Ui_Form):
         ...
         """
 
-        self.logger = create_logger(log)
+        self.logger = create_logger(log, logName=self.__class__.__name__)
         self.logger.debug("Starting execution")
         super(HDF5Georeferencer, self).__init__(parent)
         self.setupUi(self)
+        self.processedFiles = 0
+        self.filePaths = []
         self.datasetsLW.setSelectionMode(3) # multiple selection
         self.progressBar.setVisible(False)
+        self.progressBar.setMaximum(100)
+        self.progressBar.setMinimum(0)
         self.deleteIntermediaryCB.setChecked(True)
+        self.processingThread = GeoreferencerThread()
+        self.connect(self.processingThread, SIGNAL("finished(bool)"),
+                     self.finish_processing)
+        self.connect(self.processingThread, SIGNAL("processedFile(QString)"),
+                     self.update_progress)
         self.connect(self.inputFilesPB, SIGNAL("clicked()"), self.get_files)
         self.connect(self.outputDirPB, SIGNAL("clicked()"), 
                      self.select_output_dir)
@@ -84,7 +92,6 @@ class HDF5Georeferencer(QDialog, Ui_Form):
             self.logger.info("main dataset: %s" % mainDataset)
             for datasetName in datasets:
                 self.datasetsLW.addItem(datasetName)
-            #self.datasetsLW.
             if len(datasets) > 0:
                 self.enable_other_widgets(toggleState=True)
             else:
@@ -138,9 +145,14 @@ class HDF5Georeferencer(QDialog, Ui_Form):
 
     def process_files(self):
         self.logger.debug("process_files method called.")
-        # get all the necessary info
         infoDict = self.get_necessary_info()
         self.logger.info("infoDict: %s" % infoDict)
+        self.processedFiles = 0
+        self.filePaths = infoDict["filePaths"]
+        self.progressBar.setValue(0)
+        self.progressBar.setVisible(True)
+        self.processingThread.initialize(infoDict)
+        self.processingThread.start()
         self.logger.debug("process_files method exiting.")
 
     def get_necessary_info(self):
@@ -170,12 +182,95 @@ class HDF5Georeferencer(QDialog, Ui_Form):
                 "projectionString" : projectionString, "outputDir" : outputDir,
                 "deleteIntermediary" : deleteIntermediary}
 
+    def update_progress(self, filePath):
+        """
+        Update progress bar when files are processed by the secondary thread.
+        """
+
+        self.logger.debug("update_progress method called.")
+        self.processedFiles += 1
+        progress = (self.processedFiles * 100.0) / len(self.filePaths)
+        self.progressBar.setValue(progress)
+        self.logger.debug("update_progress method exiting.")
+
+    def finish_processing(self, finishStatus):
+        """
+        Terminate the processing and inform the user.
+        """
+
+        self.logger.debug("finish_processing method called.")
+        self.logger.debug("finishStatus: %s" % finishStatus)
+        if finishStatus:
+            QMessageBox.information(self, "Success", "Files have been"
+                                    " processed successfully.")
+        else:
+            QMessageBox.critical(self, "Error", "there was an error"
+                                    " processing the files.")
+        self.progressBar.setVisible(False)
+        self.logger.debug("finish_processing method exiting.")
 
 
-def create_logger(logLevel="info"):
+class GeoreferencerThread(QThread):
+
+    def __init__(self, parent=None):
+        self.logger = logging.getLogger(self.__class__.__name__)
+        super(GeoreferencerThread, self).__init__(parent)
+
+    def initialize(self, paramsDict):
+
+        self.logger.debug("initialize method called.")
+        self.filePaths = paramsDict["filePaths"]
+        self.datasets = paramsDict["datasets"]
+        self.outputDir = paramsDict["outputDir"]
+        self.projectionString = paramsDict["projectionString"]
+        self.logger.debug("initialize method exiting.")
+
+    def run(self):
+        self.logger.debug("run method called.")
+        processResults = self.process_files()
+        success = False
+        if not False in [res.values()[0] for res in processResults]:
+            success = True
+        self.emit(SIGNAL("finished(bool)"), success)
+        self.logger.debug("run method exiting.")
+
+    def process_files(self):
+        self.logger.debug("process_files method called.")
+        results = []
+        for filePath in self.filePaths:
+            self.logger.debug("filePath: %s" % filePath)
+            warpedFiles = self.process_file(filePath)
+            if len(warpedFiles) > 0:
+                result = {filePath : True}
+            else:
+                result = {filePath : False}
+            self.logger.debug("result: %s" % result)
+            results.append(result)
+            self.emit(SIGNAL("processedFile(QString)"), filePath)
+        self.logger.debug("results: %s" % results)
+        self.logger.debug("process_files method exiting.")
+        return results
+
+    def process_file(self, filePath):
+
+        self.logger.debug("process_file method called.")
+        h5f = H5Georef(filePath)
+        sampleCoords = h5f.get_sample_coords()
+        self.logger.debug("sampleCoords: %s" % sampleCoords)
+        georefFiles = h5f.georef_gtif(sampleCoords, self.outputDir,
+                                      self.datasets)
+        self.logger.debug("georefFiles: %s" % georefFiles)
+        warpedFiles = h5f.warp(georefFiles, self.outputDir,
+                               self.projectionString)
+        self.logger.debug("warpedFiles: %s" % warpedFiles)
+        self.logger.debug("process_file method exiting.")
+        return warpedFiles
+
+
+def create_logger(logLevel, logName):
     level = eval("logging.%s" % (logLevel.upper()))
     logging.basicConfig(level=level)
-    logger = logging.getLogger()
+    logger = logging.getLogger(logName)
     return logger
 
 def parse_arguments(argList):
