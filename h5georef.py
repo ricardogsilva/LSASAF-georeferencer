@@ -146,7 +146,7 @@ class H5Georef(object):
             s2 = sn * sin(x) * cos(y)
             s3 = -sn * sin(y)
             sxy = sqrt(pow(s1, 2) + pow(s2, 2))
-            lon = degrees(atan(s2 / s1) + self.subLon)
+            lon = degrees(atan(s2 / s1)) + self.subLon
             lat = degrees(atan(self.p2 * s3 / sxy))
         except ValueError:
             lon = lat = None
