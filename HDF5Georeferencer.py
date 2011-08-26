@@ -11,6 +11,8 @@
 #   - Use validators for both browse... operations
 
 import logging
+import os
+import getpass
 from optparse import OptionParser
 
 from PyQt4.QtCore import *
@@ -31,6 +33,8 @@ class HDF5Georeferencer(QDialog, Ui_Form):
         super(HDF5Georeferencer, self).__init__(parent)
         self.setupUi(self)
         self.processedFiles = 0
+        self.lastFilesDir = os.path.expanduser('~%s' % getpass.getuser())
+        self.lastOutputDir = os.path.expanduser('~%s' % getpass.getuser())
         self.filePaths = []
         self.datasetsLW.setSelectionMode(3) # multiple selection
         self.progressBar.setVisible(False)
@@ -63,9 +67,11 @@ class HDF5Georeferencer(QDialog, Ui_Form):
 
     def get_files(self):
         self.logger.debug("get_files method called.")
-        filePaths = QFileDialog.getOpenFileNames(self, "Select HDF5 files")
+        filePaths = QFileDialog.getOpenFileNames(self, "Select HDF5 files", 
+                                                 directory=self.lastFilesDir)
         if len(filePaths) > 0:
             self.logger.debug("Some files have been selected.")
+            self.lastFilesDir = os.path.dirname(str(filePaths[0]))
             self.inputFilesLE.setText(";".join([str(p) for p in filePaths]))
         else:
             self.logger.debug("No files have been selected.")
@@ -124,10 +130,13 @@ class HDF5Georeferencer(QDialog, Ui_Form):
 
     def select_output_dir(self):
         self.logger.debug("select_output_dir method called.")
-        outputDir = QFileDialog.getExistingDirectory(self, "Select an output directory")
+        outputDir = QFileDialog.getExistingDirectory(self, "Select an output" \
+                                     " directory", 
+                                     directory=self.lastOutputDir)
         self.logger.debug("outputDir: %s" % outputDir)
         if outputDir:
             self.logger.debug("There is an output directory selected.")
+            self.lastOutputDir = outputDir
             self.outputDirLE.setText(outputDir)
         else:
             self.logger.debug("No output directory selected. Using current directory.")
