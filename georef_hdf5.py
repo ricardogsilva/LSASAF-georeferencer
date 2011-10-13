@@ -35,8 +35,8 @@ def create_parser():
     parser.add_option("-p", "--projection-string", dest="projectionString",
                       help="Projection string indicating the desired output"
                       " projection. Accepts the same string formats as proj4."
-                      " Defaults to '+proj=latlong'.",
-                      default="+proj=latlong")
+                      " Defaults to '+init=epsg:4326'.",
+                      default="+init=epsg:4326")
     parser.add_option("-x", "--delete-georefs", action="store_true",
                       dest="deleteGeorefs",
                       help="Delete intermediary georeferenced files.",

@@ -40,17 +40,22 @@ Other useful links:
 import re
 import os
 import random
-import subprocess
+from subprocess import Popen, PIPE
 from math import pow, sin, cos, atan, sqrt, radians, degrees
+import logging
+
 import tables
 
 class H5Georef(object):
+
+    latLongProj = '+init=epsg:4326'
 
     def __init__(self, h5FilePath):
         """
         Open an HDF5 file and extract its relevant parameters.
         """
 
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.h5FilePath = h5FilePath
         # the LSA-SAF parameters have this shift because they use Fortran
         # (an array's first index starts at 1 and not 0)
@@ -119,23 +124,27 @@ class H5Georef(object):
         transformation.
         """
 
+        self.logger.debug('lon: %s' % lon)
+        self.logger.debug('lat: %s' % lat)
         oldDir = os.getcwd()
         os.chdir(os.path.dirname(self.h5FilePath))
         tempName = 'temp.txt'
         fh = open(tempName, 'w')
         fh.write('%s %s\n' % (lon, lat))
         fh.close()
-        #cs2csCommand = "cs2cs +init=epsg:4326 +to %s <<EOF\n%s %s\nEOF" \
-        cs2csCommand = "cs2cs +init=epsg:4326 +to %s %s" \
-                        % (self.GEOSProjString, tempName)
-        newProcess = subprocess.Popen(cs2csCommand, shell=True, 
-                                      stdin=subprocess.PIPE, 
-                                      stdout=subprocess.PIPE, 
-                                      stderr=subprocess.PIPE)
-        stdout, stderr = newProcess.communicate()
+        self.logger.debug('tempName: %s' % tempName)
+        cs2csCommand = ['cs2cs', '-f', '%.8f', self.latLongProj, '+to']
+        cs2csCommand += self.GEOSProjString.split()
+        cs2csCommand += [tempName]
+        self.logger.debug('cs2csCommand:\n\n%s' % cs2csCommand)
+        returnCode, stdout, stderr = self._run_command(cs2csCommand)
+        self.logger.debug('stdout: %s' % stdout)
+        self.logger.debug('stderr: %s' % stderr)
         easting, northing, other = stdout.strip().split()
+        self.logger.debug('easting: %s' % easting)
+        self.logger.debug('northing: %s' % northing)
         os.remove(tempName)
-        return easting, northing
+        return float(easting), float(northing)
 
     def _get_lat_lon(self, nLin, nCol):
         """
@@ -188,57 +197,48 @@ class H5Georef(object):
         successfullGeorefs = []
         for arrayName in selectedArrays:
             missingValue = self.arrays[arrayName].get("missingValue")
-            #translateCommand = 'gdal_translate -q -scale "%s" "%s" "%s" "%s" -a_nodata "%s" -a_srs "%s" ' % \
-            #                    (self.arrays[arrayName].get("oldMin"),
-            #                     self.arrays[arrayName].get("oldMax"),
-            #                     self.arrays[arrayName].get("min"),
-            #                     self.arrays[arrayName].get("max"),
-            #                     missingValue, self.GEOSProjString)
-            #inFileName = os.path.basename(self.h5FilePath)
-            #extensionList = inFileName.rsplit(".")
-            #if len(extensionList) > 1:
-            #    inFileName = ".".join(extensionList[:-1])
-            #outFileName = os.path.join(outFileDir, "%s_%s.tif" \
-            #                           % (inFileName, arrayName))
-            #for (line, col, northing, easting) in samplePoints:
-            #    translateCommand += '-gcp "%s" "%s" "%s" "%s" ' % (col, line, easting, northing)
-            #translateCommand += '"HDF5:"%s"://%s" %s' % (self.h5FilePath,
-            #                    arrayName, outFileName)
-            translateCommand = self._get_gdal_translate_command(
-                    self.arrays[arrayName].get("oldMin"),
-                    self.arrays[arrayName].get("oldMax"),
-                    self.arrays[arrayName].get("min"),
-                    self.arrays[arrayName].get("max"),
-                    missingValue, self.GEOSProjString, samplePoints,
-                    self.h5FilePath, arrayName, outFileDir)
-            print('translateCommand: \n\n%s' % translateCommand)
-            #returnCode = subprocess.call(translateCommand, shell=True)
-            newProcess = subprocess.Popen(translateCommand)
-            returnCode = newProcess.communicate()
+            inFileName = os.path.basename(self.h5FilePath)
+            extensionList = inFileName.rsplit(".")
+            if len(extensionList) > 1:
+                inFileName = ".".join(extensionList[:-1])
+            outFileName = os.path.join(outFileDir, "%s_%s.tif" \
+                                       % (inFileName, arrayName))
+            translateCommand = [
+                    'gdal_translate',
+                    '-ot', 'Float32',
+                    '-a_nodata', '%s' % missingValue,
+                    '-a_srs', self.GEOSProjString,
+                    '-scale', 
+                    '%s' % self.arrays[arrayName]['oldMin'],
+                    '%s' % self.arrays[arrayName]['oldMax'],
+                    '%s' % self.arrays[arrayName]['min'],
+                    '%s' % self.arrays[arrayName]['max']
+                    ]
+            for (line, col, northing, easting) in samplePoints:
+                translateCommand += ['-gcp', '%s' % col, '%s' % line,
+                                     '%s' % easting, '%s' % northing]
+            translateCommand += [
+                    'HDF5:"%s"://%s' % (self.h5FilePath, arrayName), 
+                    outFileName]
+            self.logger.debug('translateCommand: \n\n%s\n' % translateCommand)
+            returnCode, stdout, stderr = self._run_command(translateCommand)
+            self.logger.debug('stdout code: %s' % stdout)
+            self.logger.debug('stderr code: %s' % stderr)
+            self.logger.debug('return code: %i' % returnCode)
             if returnCode == 0:
                 successfullGeorefs.append(outFileName)
         return successfullGeorefs
 
-    def _get_gdal_translate_command(self, oldMin, oldMax, newMin, newMax, 
-                            missingValue, projString, samplePoints, 
-                    h5File, dataset, outDir):
-        command = ['gdal_translate']
-        command += ['-a_nodata', '"%s"' % missingValue]
-        command += ['-a_srs', projString]
-        command += ['-scale', '%s' % oldMin, '%s' % oldMax, '%s' % newMin, '%s' % newMax]
-        inFileName = os.path.basename(h5File)
-        extensionList = inFileName.rsplit(".")
-        if len(extensionList) > 1:
-            inFileName = ".".join(extensionList[:-1])
-        outFileName = os.path.join(outDir, "%s_%s.tif" \
-                                   % (inFileName, dataset))
-        for (line, col, northing, easting) in samplePoints:
-            command += ['-gcp', '%s' % col, '%s' % line, '"%s"' % easting,
-                        '"%s"' % northing]
-        command += ['HDF5:"%s"://%s' % (h5File, dataset), outFileName]
-        return command
+    def _run_command(self, command):
+        '''
+        Run an external command and return its return code, stdout and stderr.
+        '''
 
-    def warp(self, fileList, outDir, projectionString="+proj=latlong"):
+        newProcess = Popen(command, stdout=PIPE, stderr=PIPE)
+        stdout, stderr = newProcess.communicate()
+        return newProcess.returncode, stdout, stderr
+
+    def warp(self, fileList, outDir, projectionString=None):
         """
         Warp the georeferenced files to the desired projection.
 
@@ -252,14 +252,16 @@ class H5Georef(object):
                        projection.
             projectionString - a string, taking any of the accepted PROJ4
                                formats for describing a projection. Defaults
-                               to '+proj=latlong'.
+                               to +init=epsg:4326
             outdir - The path to the desired output directory. Defaults
                      to the same directory of the files in 'fileList'.
 
         Returns: A list of paths to the successfully warped files.
         """
 
-        warpCommand = 'gdalwarp -dstnodata "%s" -s_srs "%s" -t_srs "%s" %s %s'
+        if projectionString is None:
+            projectionString = self.latLongProj
+
         warpedFiles = []
         for filePath in fileList:
             arrayName = self._array_name_from_file(filePath)
@@ -268,12 +270,14 @@ class H5Georef(object):
             extList = basename.rsplit(".")
             outName = "%s_warped.%s" % (".".join(extList[:-1]), extList[-1])
             outFileName = os.path.join(outDir, outName)
-            print(warpCommand % (missingValue, self.GEOSProjString,
-                projectionString, filePath, outFileName))
-            returnCode = subprocess.call(warpCommand % (missingValue, 
-                                         self.GEOSProjString,
-                                         projectionString, filePath,
-                                         outFileName), shell=True)
+            warpCommand = ['gdalwarp', '-dstnodata', '%s' % missingValue, 
+                           '-s_srs', '%s' % self.GEOSProjString, '-t_srs', 
+                           '%s' % projectionString, filePath, outFileName]
+            self.logger.debug('warpCommand:\n\n%s\n' % warpCommand)
+            returnCode, stdout, stderr = self._run_command(warpCommand)
+            self.logger.debug('stdout: %s' % stdout)
+            self.logger.debug('stderr: %s' % stderr)
+            self.logger.debug('returnCode: %s' % returnCode)
             if returnCode == 0:
                 warpedFiles.append(outFileName)
         return warpedFiles
@@ -284,7 +288,6 @@ class H5Georef(object):
         """
 
         return [n for n in self.arrays.keys() if n in filePath][0]
-
 
 if __name__ == "__main__":
     pass
