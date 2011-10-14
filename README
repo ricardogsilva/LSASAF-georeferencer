@@ -1,3 +1,32 @@
 This project is about the creation of a GUI interface for the georeferencing of LSA-SAF and GEOLAND-2 BioPar HDF5 files.
 
-More info soon...
+Currently the project is working with LSA-SAF files. It is being tested on Ubuntu Linux and Windows XP.
+
+There are 3 main files:
+
+- h5georef.py - A module with the core functionality to georeference the HDF5 files.
+- georef_hdf5.py - A script for command line usage.
+- HDF5Georeferencer.py - A Graphical User Interface made with PyQt4.
+
+Dependencies:
+
+This project uses:
+    - python
+    - gdal utility programs (gdal_translate and gdalwarp)
+    - proj's cs2cs
+    - The pytables python library
+    - The graphical user interface is built with PyQt4
+
+Installation:
+
+1 - Ensure that you have installed the necessary dependencies (Windows users: see the install tip at the bottom)
+2 - Download all the files on this repository
+
+Install tip for Windows users:
+
+Download and install the FWTools package [1]
+Download and install the python (x,y) distribution
+
+Using the project:
+
+To be completed...
