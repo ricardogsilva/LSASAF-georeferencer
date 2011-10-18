@@ -8,7 +8,9 @@ There are 3 main files:
 - georef_hdf5.py - A script for command line usage.
 - HDF5Georeferencer.py - A Graphical User Interface made with PyQt4.
 
-Dependencies:
+------------
+Dependencies
+------------
 
 This project uses:
     - python
@@ -17,16 +19,65 @@ This project uses:
     - The pytables python library
     - The graphical user interface is built with PyQt4
 
-Installation:
+------------
+Installation
+------------
 
-1 - Ensure that you have installed the necessary dependencies (Windows users: see the install tip at the bottom)
-2 - Download all the files on this repository
+Installation on Ubuntu
+----------------------
 
-Install tip for Windows users:
+(I believe these instructions should work on another debian-based distributions as well and also no debian-based, with some adjustments):
 
-Download and install the FWTools package [1]
-Download and install the python (x,y) distribution
+    1 - Install dependencies. Open up a terminal and type:
 
-Using the project:
+    sudo apt-get install python-tables python-qt4 proj-bin gdal-bin
 
-To be completed...
+    2 - Download this repository. Press the 'Download this repository as ZIP file' button on github's project page. Extract the files.
+
+Installation on Windows:
+-----------------------
+
+    1 - Download and install the FWTools package [1]
+
+    2 - Download and install the python(x,y) distribution [2]
+        - When installing python(x,y) make sure you have AT LEAST the following packages selected:
+            - PyQT
+            - numexpr
+            - pytables
+
+    3 - Download this repository. Press the 'Download this repository as ZIP file' button on github's project page. Extract the files.
+
+-----------------
+Using the project
+-----------------
+
+Linux
+-----
+
+    1 - Navigate to the directory where you downloaded the code and double click on the HDF5Georeferencer.py file. 
+        Choose to execute it if asked.
+
+    2 - A graphical window will appear and the rest is (hopefully) self-explanatory.
+
+Windows
+-------
+    1 - Start an FWTools shell (accessible from windows start menu).
+    2 - Navigate to the directory where you downloaded the code. For example:
+            
+            cd "C:\Documents and Settings\ricardo\dev\LSASAF-georeferencer"
+
+    3 - Execute the HDF5Georeferencer.py file with the python executable installed by python(x,y)
+
+            C:\Python27\python.exe HDF5Georeferencer.py
+
+    4 - A graphical window will appear and the rest is (hopefully) self-explanatory.
+        
+    TIP: press the <tab> key to get autocompletion from the command line, so you don't have to hardtype all the paths.
+
+
+Using the tool through the command line and in scripts.
+-------------------------------------------------------
+
+The georef_hdf5.py script can be called from the command-line in order to use this tool in scripts. See the help for more details. It is available by running:
+
+    georef_hdf5.py -h
